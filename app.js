@@ -1,4 +1,4 @@
-import { api, configured, observeSession, sendCode, verifyCode, signOut, watchChanges } from './backend.js';
+import { api, configured, observeSession, createAccount, login, saveProfile, sendCode, verifyCode, signOut, watchChanges } from './backend.js';
 
 const main = document.querySelector('#main');
 const nav = document.querySelector('#nav');
@@ -18,6 +18,14 @@ const escape = value => String(value ?? '').replace(/[&<>"']/g, ch => ({'&':'&am
 const base = '/api/households';
 let account, data, selected, snapshot, flashTimer, invite, sessionUser, emailForCode, signInError, search = '', requestVersion = 0;
 const expanded = new Set();
+let authMode = 'signup';
+let signupCode = true;
+let profileRequired = false;
+let enteredEmail = '';
+const usernameField = () => input('Username','username','','required minlength="2" maxlength="32" autocomplete="username"');
+const passwordField = fresh => input('Password','password','',fresh ? 'required type="password" minlength="8" autocomplete="new-password"' : 'required type="password" autocomplete="current-password"');
+const emailField = () => input('Email address','email',enteredEmail,'required type="email" autocomplete="email" maxlength="254"');
+
 const tab = () => tabs.find(([key]) => location.hash === '#' + key)?.[0] || 'overview';
 const path = segment => base + '/' + encodeURIComponent(selected) + (segment ? '/' + segment : '');
 const button = (label,action,value='',type='') => `<button type="button" class="${type}" data-action="${action}" data-value="${escape(value)}">${label}</button>`;
@@ -144,17 +152,33 @@ function household() {
 }
 function render() {
   nav.hidden = !data;
-  if (!account) {
+  if (profileRequired || !account) {
+    nav.hidden = true;
     switcher.innerHTML = '';
-    main.innerHTML = title('HomeHub','A shared space for your household.') + `<section class="card stack">
-      ${signInError ? '<p class="form-error" role="alert">' + escape(signInError) + '</p>' : ''}
-      ${configured ? (emailForCode
-        ? '<p>Enter the code sent to ' + escape(emailForCode) + '.</p>' +
-          form(input('Email code','code','','required inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6,10}" maxlength="10"'),'Verify code','data-form="verify-code"') +
-          '<div class="actions">' + button('Resend code','resend-code') + button('Change email','change-email') + '</div>'
-        : form(input('Email address','email','','required type="email" autocomplete="email" maxlength="254"'),'Email me a code','data-form="send-code"'))
-        : '<p>Set the Supabase URL and publishable key to enable sign-in.</p>'}
-    </section>`;
+    const emailActions = '<div class="actions">' + button('Resend code','resend-code') + button('Change email','change-email') + '</div>';
+    let content;
+    let heading;
+    if (profileRequired) {
+      heading = 'Finish setting up your account';
+      content = form(usernameField() + passwordField(true),'Save account','data-form="profile"') + button('Log out','signout');
+    } else if (emailForCode) {
+      heading = 'Verify your email';
+      content = '<p>Enter the code sent to ' + escape(emailForCode) + '.</p>' +
+        form(input('Email code','code','','required inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6,10}" maxlength="10"'),'Verify email','data-form="verify-code"') + emailActions;
+    } else if (authMode === 'login') {
+      heading = 'Sign in';
+      content = form(emailField() + passwordField(false),'Sign in','data-form="login"') +
+        '<div class="actions">' + button('Create account','auth-mode','signup') + button('Sign in with an email code','auth-mode','code') + '</div>';
+    } else if (authMode === 'code') {
+      heading = 'Sign in with an email code';
+      content = form(emailField(),'Email me a code','data-form="send-code"') + button('Back to sign in','auth-mode','login');
+    } else {
+      heading = 'Create your HomeHub account';
+      content = form(usernameField() + emailField() + passwordField(true),'Create account','data-form="signup"') + button('Already have an account? Sign in','auth-mode','login');
+    }
+    main.innerHTML = '<div class="auth-layout">' + title(heading) + '<section class="card stack">' +
+      (signInError ? '<p class="form-error" role="alert">' + escape(signInError) + '</p>' : '') +
+      (configured ? content : '<p>Set the Supabase URL and publishable key to enable sign-in.</p>') + '</section></div>';
     return;
   }
   const householdOptions = account.households.map(h => [h.id,h.name]);
@@ -204,8 +228,14 @@ document.addEventListener('click', async event => {
   control.disabled = true;
   try {
     if (action === 'resend-code') {
-      await sendCode(emailForCode);
+      await sendCode(emailForCode,signupCode);
       toast('A new code was sent.');
+      return;
+    }
+    if (action === 'auth-mode') {
+      authMode = value;
+      signInError = null;
+      render();
       return;
     }
     if (action === 'change-email') {
@@ -258,9 +288,39 @@ document.addEventListener('submit', async event => {
   submit.disabled = true;
   errorText.hidden = true;
   try {
+    if (action === 'profile') {
+      const username = values.username.trim();
+      if (username.length < 2) throw new Error('Choose a username with at least 2 characters.');
+      await saveProfile(username,values.password);
+      return;
+    }
+    if (action === 'signup') {
+      const username = values.username.trim();
+      if (username.length < 2) throw new Error('Choose a username with at least 2 characters.');
+      enteredEmail = values.email.trim();
+      await createAccount(enteredEmail,values.password,username);
+      emailForCode = enteredEmail;
+      signupCode = true;
+      render();
+      return;
+    }
+    if (action === 'login') {
+      enteredEmail = values.email.trim();
+      try { await login(enteredEmail,values.password); }
+      catch (error) {
+        if (error.code !== 'email_not_confirmed') throw error;
+        await sendCode(enteredEmail,true);
+        emailForCode = enteredEmail;
+        signupCode = true;
+        render();
+      }
+      return;
+    }
     if (action === 'send-code') {
       const email = values.email.trim();
-      await sendCode(email);
+      await sendCode(email,false);
+      enteredEmail = email;
+      signupCode = false;
       emailForCode = email;
       render();
       return;
@@ -310,8 +370,8 @@ document.addEventListener('toggle',event => {
   if (key != null) event.target.open ? expanded.add(key) : expanded.delete(key);
 },true);
 window.addEventListener('hashchange',() => { render(); window.scrollTo(0,0); });
-document.addEventListener('visibilitychange',() => { if (!document.hidden && sessionUser) refresh(true); });
-setInterval(() => { if (!document.hidden && sessionUser) refresh(true); },12000);
+document.addEventListener('visibilitychange',() => { if (!document.hidden && sessionUser && !profileRequired) refresh(true); });
+setInterval(() => { if (!document.hidden && sessionUser && !profileRequired) refresh(true); },12000);
 if ('serviceWorker' in navigator && import.meta.env.PROD) {
   navigator.serviceWorker.register(new URL(import.meta.env.BASE_URL + 'sw.js',location.origin)).catch(() => {});
 }
@@ -325,17 +385,20 @@ if (configured) {
   observeSession((user,event) => {
     if (event === 'TOKEN_REFRESHED') return;
     const uid = user?.id ?? null;
-    if (uid === sessionUser && event !== 'INITIAL_SESSION') return;
+    const needsProfile = Boolean(uid && !user.user_metadata?.username);
+    if (uid === sessionUser && needsProfile === profileRequired && event !== 'INITIAL_SESSION') return;
+    profileRequired = needsProfile;
     sessionUser = uid;
     ++requestVersion;
     account = data = selected = snapshot = invite = null;
     expanded.clear();
     search = '';
     if (dialog.open) dialog.close();
-    watchChanges(uid,() => { if (uid && uid === sessionUser) void refresh(true); });
+    watchChanges(uid,() => { if (uid && uid === sessionUser && !profileRequired) void refresh(true); });
     if (uid) {
       signInError = emailForCode = null;
-      void refresh();
+      if (profileRequired) render();
+      else void refresh();
     } else {
       render();
     }

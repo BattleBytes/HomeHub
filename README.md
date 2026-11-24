@@ -9,7 +9,7 @@ This setup starts with an empty Supabase database. Any records in the original p
 1. Extract the source ZIP and open a terminal in `homehub-pages`, the folder that contains this guide.
 2. Create a **public** repository called `homehub` on GitHub. Leave the README, license and gitignore options unchecked so GitHub starts with an empty repo. GitHub Free supports Pages from public repositories. Anyone can see the frontend source and frontend URL. The Supabase database separately enforces who can see household data.
 3. In the repository, open **Settings → Pages → Build and deployment** and set **Source** to **GitHub Actions**. If the setting is unavailable before the first commit, return to it immediately after pushing in step 5.
-4. Write down your Pages URL. For a project repository it is `https://YOUR_GITHUB_USERNAME.github.io/homehub/`. If you use a different repository name, use that exact name in the URL and OAuth settings. GitHub Actions supplies the correct path to Vite at build time.
+4. Write down your Pages URL. For a project repository it is `https://YOUR_GITHUB_USERNAME.github.io/homehub/`. If you use a different repository name, use that exact name in the URL and Supabase settings. GitHub Actions supplies the correct path to Vite at build time.
 
 [GitHub Pages workflow documentation](https://docs.github.com/en/pages/getting-started-with-github-pages/using-custom-workflows-with-github-pages)
 
@@ -77,7 +77,7 @@ To run locally with Node.js 24, copy `.env.example` to `.env.local`, insert the 
 
 Use two separate browser profiles with two email addresses that your Supabase SMTP setup can reach, A and B.
 
-1. Open the Pages URL signed out. Confirm that only the email verification codes screen appears.
+1. Open the Pages URL signed out. Create an account with a username, email and password. Confirm that the signup email contains a code, then enter it to proceed. Returning users can sign in with email and password. Usernames are shown to household members.
 2. In profile A, sign in and create **Maple Test**. In B, sign in and create **Cedar Test**. Confirm each starts with zero items and tasks and only its creator is an admin. Add a different item, maintenance task and contact to each household.
 3. Test the direct API while A and B are still independent. In Firefox DevTools, open **Network**, filter for `/rest/v1/rpc/homehub`, navigate or reload the app, and use **Edit and Resend** on an authenticated RPC to keep its headers in the browser. Obtain the target household UUID from the other profile's own `list` response. With A's authenticated request, try B's UUID in the body below. Repeat in the other direction.
 

@@ -15,9 +15,27 @@ export function observeSession(handle) {
   });
 }
 
-export async function sendCode(email) {
-  const {error} = await supabase.auth.signInWithOtp({email, options:{shouldCreateUser:true}});
+export async function createAccount(email, password, username) {
+  const {error} = await supabase.auth.signUp({email,password,options:{data:{username,full_name:username}}});
   if (error) throw error;
+}
+
+export async function login(email, password) {
+  const {error} = await supabase.auth.signInWithPassword({email,password});
+  if (error) throw error;
+}
+
+export async function sendCode(email, signup) {
+  const {error} = signup
+    ? await supabase.auth.resend({email,type:'signup'})
+    : await supabase.auth.signInWithOtp({email,options:{shouldCreateUser:false}});
+  if (error) throw error;
+}
+
+export async function saveProfile(username, password) {
+  const {data,error} = await supabase.auth.updateUser({password,data:{username,full_name:username}});
+  if (error) throw error;
+  return data.user;
 }
 
 export async function verifyCode(email, token) {
